@@ -1,7 +1,16 @@
+from __future__ import print_function, division
+import os
 import torch
+import pandas as pd
+from skimage import io,transform
 import torch.nn as nn
-import torchvision.transforms as transforms
+import torchvision.transforms as transforms, utils
 from torch.autograd import Variable
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+
 
 '''
 	TODO:
@@ -32,7 +41,6 @@ num_epochs = 100
 batch_size = 256
 learning_rate = 0.001
 
-#Do data loading here
 
 
 #Build model here
@@ -154,40 +162,75 @@ class GazeNet(nn.Module)
 		out = torch.add(out,fc4)
 		out = torch.add(out,fc5)
 		out = torch.div(out,5)
+	
+
+def train_gaze(train_loader, weightfile):
+	#Do data loading here
+
+
 		
-gazenet = GazeNet()
-gazenet.cuda() #Comment out if no CUDA
+	gazenet = GazeNet()
+	gazenet.cuda() #Comment out if no CUDA
 
-#Loss and Optimizer
-criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(cnn.parameters(), lr=learning_rate)
+	#Loss and Optimizer
+	criterion = nn.CrossEntropyLoss()
+	optimizer = torch.optim.Adam(cnn.parameters(), lr=learning_rate)
 
-for epoch in range(num_epochs):
-	'''
-		Next 3 lines not implemented yet!!!
-	'''
-	for i, (images,labels) in enumerate(train_loader):
+	for epoch in range(num_epochs):
+		'''
+			Next 3 lines not implemented yet!!!
+		'''
+		for i, (images,labels) in enumerate(train_loader):
+			images = Variable(images).cuda()
+			labels = Variable(labels).cuda()
+
+			#Forward and Backward Pass
+			optimizer.zero_grad() #Zero gradients
+			outputs = gazenet(images)
+			loss = criterion(outputs, labels)
+			loss.backward()
+			optimizer.step()
+
+			#**Need to check with Validation Set
+	gazenet.save_state_dict(weightfile)
+	#Test model
+	gazenet.eval()
+	correct = 0
+	total = 0
+
+	for images, labels in test_loader:
 		images = Variable(images).cuda()
-		labels = Variable(labels.cuda()
-
-		#Forward and Backward Pass
-		optimizer.zero_grad() #Zero gradients
 		outputs = gazenet(images)
-		loss = criterion(outputs, labels)
-		loss.backward()
-		optimizer.step()
+		#Show heatmaps and print accuracy
 
-		#**Need to check with Validation Set
 
-#Test model
-gazenet.eval()
-correct = 0
-total = 0
+def find_gaze(img,head,pos,weightfile):
 
-for images, labels in test_loader:
-	images = Variable(images).cuda()
-	outputs = gazenet(images)
-	#Show heatmaps and print accuracy
+		head_pos = np.zeros((1,1,169))
+		z = np.zeros((13,13))
+		x = np.floor(pos[0]*13)+1
+		y = np.floor(pos[1]*13)+1
+		z[x,y] = 1
+		head_pos[1,1,:]=z[:]
+		head_pos = np.resize(head_pos,(1,169,1))#resize to column vector
+		h_pos = torch.from_numpy(head_pos)
+
+		gazenet = GazeNet()
+		#load model
+		gazenet.load_state_dict(torch.load(weightfile)
+		gazenet.eval()
+
+		#From CV2 image
+		img = torch.from_numpy(img.transpose(2,0,1)).float().div(255.0).unsqueeze(0)
+		head = = torch.from_numpy(head.transpose(2,0,1)).float().div(255.0).unsqueeze(0)
+		#create image variable
+		img_var = Variable(img, requires_grad=False).cuda()
+		head_var = Variable(head, requires_grad=False).cuda()
+		
+		#evaluate image
+		gaze_outputs = gazenet([img_var, head, h_pos])
+		
+
 
 
 
