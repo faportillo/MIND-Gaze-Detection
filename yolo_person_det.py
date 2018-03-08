@@ -18,8 +18,8 @@ from torch.autograd import Variable
 import gazenet_v2 as gn
 from gazenet_v2 import GazeNet
 
-def detect_cv2_video(imgfile):
-	'''m = Darknet(cfgfile)
+def detect_cv2_video(cfgfile,weightfile,imgfile):
+	m = Darknet(cfgfile)
 	m.load_weights(weightfile)
 	print('Loading weights from %s... Done!' % (weightfile))
 	if m.num_classes == 20:
@@ -31,7 +31,7 @@ def detect_cv2_video(imgfile):
 	class_names = load_class_names(namesfile)
 	use_cuda = 1
 	if use_cuda:
-		m.cuda()'''
+		m.cuda()
 
 	#GAZENET MODEL
 	get_gaze = GazeNet()
@@ -84,7 +84,7 @@ def detect_cv2_video(imgfile):
 					has_baby = True
 					cv2.rectangle(baby_side,(x,y),(x+w,y+h),(0,0,255),2)
 					baby_head = baby_side[y:y+h,x:x+w]#Check right size. **Assumes baby is always on right side of scene
-					baby_head = cv2.resize(baby_head,(227, 277), interpolation=cv2.INTER_CUBIC)
+					baby_head = cv2.resize(baby_head,(227, 227), interpolation=cv2.INTER_CUBIC)
 					#baby_head=cv2.filter2D(baby_head,-1,kernel)
 				
 					#cv2.fastNlMeansDenoisingColored(baby_head,baby_head,2,10,7,21)
@@ -123,8 +123,10 @@ def detect_cv2_video(imgfile):
 							break
 						ctr=ctr+1
 			if has_eyes and has_baby:
-				re_img = cv2.resize(img,(227,227))	
-				heatmap = gn.find_gaze(img,baby_head,eye_position, get_gaze)
+				re_img = cv2.resize(img,(227,227))
+				re_img -= cv2.mean(re_img)
+				print(img)
+				heatmap = gn.find_gaze(re_img,baby_head,eye_position, get_gaze)
 				cv2.imshow('baby_face', baby_head)
 				'''
 					Do Gazenet stuff here
@@ -132,14 +134,15 @@ def detect_cv2_video(imgfile):
 
 				'''
 			#img = img[0:330, 0:np.size(img,1)]
-			sized = cv2.resize(img[0:330, 0:np.size(img,1)/3], (227, 277)) #Resize to m.height, m.width
-			'''bboxes = do_detect(m, sized, 0.5, 0.4, use_cuda) #Yolo detection
+			sized = cv2.resize(img[0:330, 0:np.size(img,1)*2//3], (m.height, m.width)) #Resize to m.height, m.width
+			bboxes = do_detect(m, sized, 0.5, 0.4, use_cuda) #Yolo detection
 			#x1,y1,x2,y2 = bboxes[0],bboxes[1],bboxes[2],bboxes[3]
 			print(str(len(bboxes)))
 			print('------')
-			draw_img = plot_boxes_cv2(img, bboxes, None, class_names=class_names)
-			cv2.imshow(cfgfile, draw_img) #display main scene'''
-			cv2.imshow('Mainscene', img)
+
+			##Find way to draw boxes on global IMG instead of SIZED img
+			draw_img = plot_boxes_cv2(sized, bboxes, None, class_names=class_names)
+			cv2.imshow(cfgfile, draw_img) #display main scene
 				
 		else:
 			 print("Unable to read image")
@@ -147,7 +150,7 @@ def detect_cv2_video(imgfile):
 		if cv2.waitKey(1) & 0xFF == ord('q'):
 			break
 
-detect_cv2_video('46010_9_Synchrony.mpg')
+detect_cv2_video('pytorch-yolo2/cfg/yolo.cfg', 'pytorch-yolo2/yolo.weights','46010_9_Synchrony.mpg')
 
 
 cap.release()

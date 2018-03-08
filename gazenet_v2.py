@@ -9,10 +9,10 @@ from torch.autograd import Variable
 import cv2
 import numpy as np
 import sys
-import functional
-
+from torch.nn._functions.padding import ConstantPadNd
+import matplotlib.pyplot as plt
 #Uncomment if using build < 0.4
-#from LocalResponseNorm import LocalResponseNorm
+from LocalResponseNorm import LRN
 
 
 '''
@@ -32,9 +32,8 @@ import functional
 
 
 '''
-	Input Image Size: 224x224x3x1
-	Input Face Size: 224x224x3x1
-	^Crop to 224x224x3x1 when pre-processing
+	Input Image Size: 227x227x3x1
+	Input Face Size: 227x227x3x1
 	Input Face Pos Size: 1x169x1x1 -- Because head location is 13x13 area around eye center
 
 '''
@@ -57,12 +56,12 @@ class GazeNet(nn.Module):
 			nn.Conv2d(3,96,kernel_size=11, stride=4,padding=2),
 			nn.ReLU(),
 			nn.MaxPool2d(kernel_size=3, stride=2),
-			nn.LocalResponseNorm(5),
+			LRN(local_size=5),
 			#layer2
 			nn.Conv2d(96,256,kernel_size=5,stride=1,padding=2,groups=2),
 			nn.ReLU(),
 			nn.MaxPool2d(kernel_size=3,stride=2),
-			nn.LocalResponseNorm(5),
+			LRN(local_size=5),
 			#layer3
 			nn.Conv2d(256,384,kernel_size=3, stride=1,padding=1),
 			nn.ReLU(),
@@ -84,12 +83,12 @@ class GazeNet(nn.Module):
 			nn.Conv2d(3,96,kernel_size=11, stride=4,padding=1), #down to 55x55
 			nn.ReLU(),
 			nn.MaxPool2d(kernel_size=3, stride=2), #pool to 27x27
-			nn.LocalResponseNorm(5),
+			LRN(local_size=5),
 			#layer2
 			nn.Conv2d(96,256,kernel_size=5,stride=1,padding=2,groups=2), #stay @ 27x27
 			nn.ReLU(),
 			nn.MaxPool2d(kernel_size=3,stride=2), #pool to 13x13
-			nn.LocalResponseNorm(5),
+			LRN(local_size=5),
 			#layer3
 			nn.Conv2d(256,384,kernel_size=3, stride=1,padding=1),#Stay @ 13x13
 			nn.ReLU(),
@@ -102,7 +101,7 @@ class GazeNet(nn.Module):
 			nn.MaxPool2d(kernel_size=3,stride=2)) #pool to 6x6
 		#Face FC Layer
 		self.fc_face = nn.Sequential(
-			nn.Linear(6*6*256,500),
+			nn.Linear(9216,500),
 			nn.ReLU())
 		#Combined Face and EyePos FC Layers
 		self.gaze_fc = nn.Sequential(
@@ -123,7 +122,7 @@ class GazeNet(nn.Module):
 		self.fc_0_1 = nn.Linear(13*13*1,25)
 
 		#Softmax function
-		self.softmax = nn.Softmax()
+		self.softmax = nn.Softmax(dim=0)
 		
 		load_weights(self)
 
@@ -133,14 +132,19 @@ class GazeNet(nn.Module):
 
 		#Gaze pathway
 		gaze = self.gaze_conv(x_h)
+		print("\n\n\t\tGAZE SIZE (Post conv): "+str(gaze.size()))
 		gaze = gaze.view(gaze.size(0),-1) #Reshape
+		print("\n\n\t\tGAZE Type: "+str(gaze.size()))
 		gaze = self.fc_face(gaze)
+		
 		#Head position input
 		x_p = x_p.view(x_p.size(0),-1)
 		x_p = torch.mul(x_p,24) #scale by 24 **According to caffe prototxt file
-		gaze = torch.cat((gaze,x_p),0) #Concat both arrays
+		x_p = x_p.type(torch.cuda.FloatTensor)
+		gaze = gaze.type(torch.cuda.FloatTensor)
+		gaze = torch.cat((gaze,x_p),1) #Concat both arrays
 		gaze = self.gaze_fc(gaze)
-		gaze = gaze.view(13,13) #Gaze mask is 13x13 so reshape
+		gaze = gaze.view(1,1,13,13) #Gaze mask is 13x13 so reshape
 		gaze = self.importance_map(gaze)
 
 		#Do element-wise product b/w Saliency Map and Gaze Mask
@@ -159,6 +163,7 @@ class GazeNet(nn.Module):
 		fc3 = self.softmax(fc3)
 		fc4 = self.softmax(fc4)
 		fc5 = self.softmax(fc5)
+		return [fc1,fc2,fc3,fc4,fc5]
 		#Average outputs
 		'''
 		out = torch.add(fc1,fc2)
@@ -179,7 +184,7 @@ def train_gaze(train_loader, weightfile):
 	gazenet.cuda() #Comment out if no CUDA
 
 	#Load weights for model
-	gazenet = load_weights(gazenet)
+	#gazenet = load_weights(gazenet)
 
 	#Loss and Optimizer
 	criterion = nn.CrossEntropyLoss()
@@ -219,9 +224,12 @@ def find_gaze(img,head,pos,model):
 
 	#Load the weights
 	gazenet = load_weights(model)
-
+	gazenet.cuda()
 	#Normalize images
-	img = img/np.size(img,0)
+	'''img = img/np.size(img,0)
+	head = head/np.size(head,0)'''
+	print(img)
+	
 
 	#transfrom head position (aka eye location coordinate) into vector
 	head_pos = np.zeros((1,1,169))
@@ -229,42 +237,51 @@ def find_gaze(img,head,pos,model):
 	x = np.floor((pos[0]*13)/np.size(img,0))+1
 	y = np.floor((pos[1]*13)/np.size(img,0))+1
 	z[x,y] = 1
-	head_pos[1,1,:]=z[:]
+	z = np.reshape(z, (1,1,169))
+	head_pos=z
 	head_pos = np.resize(head_pos,(1,169,1))#resize to column vector
 	h_pos = torch.from_numpy(head_pos)
 
+	#Resize images
+	print("\n\nimg size: " + str(np.shape(img)))
+	print("\n\n")
+	img = np.reshape(img,(227,227,3,1))
+	head = np.reshape(head,(227,227,3,1))
+
 	#load model
-	gazenet.eval()
+	#gazenet.eval()
 
 	#From CV2 image
-	img = torch.from_numpy(img.transpose(2,0,1)).float().div(255.0).unsqueeze(0)
-	head = torch.from_numpy(head.transpose(2,0,1)).float().div(255.0).unsqueeze(0)
+	t_img = torch.from_numpy(img.transpose(3,2,0,1)).float()
+	t_head = torch.from_numpy(head.transpose(3,2,0,1)).float()
 	#create image variable
-	img_var = Variable(img, requires_grad=False).cuda()
-	head_var = Variable(head, requires_grad=False).cuda()
-
+	img_var = Variable(t_img, requires_grad=False).cuda()
+	head_var = Variable(t_head, requires_grad=False).cuda()
+	h_pos = Variable(h_pos,requires_grad=False).cuda()
 	#evaluate image, output is Pytorch Variable
-	gaze_outputs = gazenet([img_var, head, h_pos])
+	gaze_outputs = gazenet(img_var, head_var, h_pos)
+	print("\n\n\t\tGAZE OUTPUTS: "+str(gaze_outputs))
+	print("\n\n")
 
-	outputs = gaze_outputs.data.cpu().numpy()
+	outputs = gaze_outputs
 
 	alpha = 0.3 #Might need later
-	fc_0_0 = np.transpose(outputs[0])
-	fc_1_0 = np.transpose(outputs[1])
-	fc_m1_0 = np.transpose(outputs[2])
-	fc_0_1 = np.transpose(outputs[3])
-	fc_0_m1 = np.transpose(outputs[4])
+	fc_0_0 = np.transpose(outputs[0].data.cpu().numpy())
+	fc_1_0 = np.transpose(outputs[1].data.cpu().numpy())
+	fc_m1_0 = np.transpose(outputs[2].data.cpu().numpy())
+	fc_0_1 = np.transpose(outputs[3].data.cpu().numpy())
+	fc_0_m1 = np.transpose(outputs[4].data.cpu().numpy())
 
 	#construct heatmap for images
 	heatmap = np.zeros((15,15))
 	count_hm = np.zeros((15,15))
 	
 	#Reshape to squares
-	f_0_0 = np.reshape(fc_0_0[0,:],(5,5)) 
-	f_1_0 = np.reshape(fc_1_0[0,:],(5,5)) 
-	f_m1_0 = np.reshape(fc_m1_0[0,:],(5,5)) 
-	f_0_1 = np.reshape(fc_0_1[0,:],(5,5)) 
-	f_0_m1 = np.reshape(fc_0_m1[0,:],(5,5)) 
+	f_0_0 = np.reshape(fc_0_0,(5,5)) 
+	f_1_0 = np.reshape(fc_1_0,(5,5)) 
+	f_m1_0 = np.reshape(fc_m1_0,(5,5)) 
+	f_0_1 = np.reshape(fc_0_1,(5,5)) 
+	f_0_m1 = np.reshape(fc_0_m1,(5,5)) 
 
 	f_list = [f_0_0, f_1_0, f_m1_0, f_0_1, f_0_m1]
 	v_x = [0, 1, -1, 0, 0]
@@ -274,6 +291,7 @@ def find_gaze(img,head,pos,model):
 	for k in range(0,4):
 		delta_x = v_x[k]
 		delta_y = v_y[k]
+		f = f_list[k]
 		for x in range(1,5):
 			for y in range(1,5):
 				i_x = 1 + 3*(x-1) - delta_x
@@ -294,16 +312,23 @@ def find_gaze(img,head,pos,model):
 				f_y = min(14,f_y)
 				if(y==4):
 					f_y = 14
-				hm[i_x:f_x,i_y:f_y] += f[x,y]
+				heatmap[i_x:f_x,i_y:f_y] += f[x,y]
 				count_hm[i_x:f_x,i_y:f_y] += 1
 	
 	#Resize heatmap to match size of input image
-	hm_base = np.divide(hm,count_hm)
-	hm_results = cv2.resize(np.transpose(hm_base),(img.width,img.height),interpolation=INTER_LINEAR)
+	heatmap = heatmap.astype(np.uint8)
+	#heatmap = np.reshape(heatmap,(1,heatmap.shape[0],heatmap.shape[1]))
 
+	hm_base = heatmap#np.divide(heatmap,count_hm) #UNCOMMENT ONCE LRN IMPLEMENTED
+	hm_results = cv2.resize(np.transpose(hm_base),(227,227),interpolation=cv2.INTER_LINEAR)
+	hm_results = np.reshape(hm_results,(hm_results.shape[0],hm_results.shape[1],1))
+	cv2.imshow('heatmap',hm_results)
+	heat_img = cv2.cvtColor(hm_results,cv2.COLOR_GRAY2RGB)
+	heat_img = cv2.applyColorMap(heat_img,cv2.COLORMAP_JET)
+	new_img = np.reshape(img,(img.shape[0],img.shape[1],3))
 	#Blend images together
-	combined_image = cv2.addWeighted(img,0.6,hm_results,0.4)
-
+	combined_image = cv2.addWeighted(new_img,0.6,heat_img,0.4,0)
+	cv2.imshow('Heatmap',combined_image)
 	return combined_image
 	
         
@@ -380,24 +405,28 @@ def load_weights(gazenet):
 	print(gazenet.gaze_conv[12].bias.data.shape == b.shape)
 	gazenet.gaze_conv[12].weight.data = torch.from_numpy(w)
 	gazenet.gaze_conv[12].bias.data = torch.from_numpy(b)
+	print("\n\t\tConv5 SIZE: "+ str(np.shape(w)))
 
 
 
 
 	print("Loading Gaze FC")
 	w = np.load("Pre-trained model/fc6_face_0.npy")
+	print("\n\t\tFC6 SIZE: "+ str(np.shape(w)))
 	b = np.load("Pre-trained model/fc6_face_1.npy")
-	print(gazenet.fc_face[0].weight.data.shape == w.shape)
+	print(gazenet.fc_face[0].weight.data.shape)
 	print(gazenet.fc_face[0].bias.data.shape == b.shape)
-	gazenet.fc_face[0].weight.data = torch.from_numpy(w)
+	gazenet.fc_face[0].weight.data = torch.from_numpy(w)#.transpose(1,0)
 	gazenet.fc_face[0].bias.data = torch.from_numpy(b)
 	w = np.load("Pre-trained model/fc7_face_0.npy")
+	print("\n\t\FC7 SIZE: "+ str(np.shape(w)))
 	b = np.load("Pre-trained model/fc7_face_1.npy")
 	print(gazenet.gaze_fc[0].weight.data.shape == w.shape)
 	print(gazenet.gaze_fc[0].bias.data.shape == b.shape)
 	gazenet.gaze_fc[0].weight.data = torch.from_numpy(w)
 	gazenet.gaze_fc[0].bias.data = torch.from_numpy(b)
 	w = np.load("Pre-trained model/fc8_face_0.npy")
+	print("\n\t\tFC8 SIZE: "+ str(np.shape(w)))
 	b = np.load("Pre-trained model/fc8_face_1.npy")
 	print(gazenet.gaze_fc[2].weight.data.shape == w.shape)
 	print(gazenet.gaze_fc[2].bias.data.shape == b.shape)

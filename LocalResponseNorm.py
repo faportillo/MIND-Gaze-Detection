@@ -1,54 +1,32 @@
-import warnings
-import math
-from operator import mul
-from functools import reduce
-
 import torch
-from torch.autograd import Variable
+import os
+import torch.nn as nn
+import torch.utils.model_zoo as model_zoo
+
+class LRN(nn.Module):
+	def __init__(self, local_size=1, alpha=1.0, beta=0.75, ACROSS_CHANNELS=True):
+		super(LRN, self).__init__()
+		self.ACROSS_CHANNELS = ACROSS_CHANNELS
+		if ACROSS_CHANNELS:
+			self.average=nn.AvgPool3d(kernel_size=(local_size, 1, 1),
+				    stride=1,
+				    padding=(int((local_size-1.0)/2), 0, 0))
+		else:
+			self.average=nn.AvgPool2d(kernel_size=local_size,
+				    stride=1,
+				    padding=int((local_size-1.0)/2))
+		self.alpha = alpha
+		self.beta = beta
 
 
-class LocalResponseNorm(Module):
-
-    def __init__(self, size, alpha=1e-4, beta=0.75, k=1):
-        super(LocalResponseNorm, self).__init__()
-        self.size = size
-        self.alpha = alpha
-        self.beta = beta
-        self.k = k
-
-    def forward(self, input):
-        return local_response_norm(input, self.size, self.alpha, self.beta,
-                                     self.k)
-
-    def __repr__(self):
-        return self.__class__.__name__ + '(' \
-            + str(self.size) \
-            + ', alpha=' + str(self.alpha) \
-            + ', beta=' + str(self.beta) \
-            + ', k=' + str(self.k) + ')'
-
-
-
-
-def local_response_norm(input, size, alpha=1e-4, beta=0.75, k=1):
-    r"""Applies local response normalization over an input signal composed of
-    several input planes, where channels occupy the second dimension.
-    Applies normalization across channels.
-    See :class:`~torch.nn.LocalResponseNorm` for details.
-    """
-    dim = input.dim()
-    if dim < 3:
-        raise ValueError('Expected 3D or higher dimensionality \
-                         input (got {} dimensions)'.format(dim))
-    div = input.mul(input).unsqueeze(1)
-    if dim == 3:
-        div = pad(div, (0, 0, size // 2, (size - 1) // 2))
-        div = avg_pool2d(div, (size, 1), stride=1).squeeze(1)
-    else:
-        sizes = input.size()
-        div = div.view(sizes[0], 1, sizes[1], sizes[2], -1)
-        div = pad(div, (0, 0, 0, 0, size // 2, (size - 1) // 2))
-        div = avg_pool3d(div, (size, 1, 1), stride=1).squeeze(1)
-        div = div.view(sizes)
-    div = div.mul(alpha).add(k).pow(beta)
-return input / div
+	def forward(self, x):
+		if self.ACROSS_CHANNELS:
+			div = x.pow(2).unsqueeze(1)
+			div = self.average(div).squeeze(1)
+			div = div.mul(self.alpha).add(1.0).pow(self.beta)
+		else:
+			div = x.pow(2)
+			div = self.average(div)
+			div = div.mul(self.alpha).add(1.0).pow(self.beta)
+		x = x.div(div)
+		return x
