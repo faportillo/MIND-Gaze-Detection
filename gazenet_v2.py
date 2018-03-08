@@ -164,14 +164,6 @@ class GazeNet(nn.Module):
 		fc4 = self.softmax(fc4)
 		fc5 = self.softmax(fc5)
 		return [fc1,fc2,fc3,fc4,fc5]
-		#Average outputs
-		'''
-		out = torch.add(fc1,fc2)
-		out = torch.add(out,fc3)
-		out = torch.add(out,fc4)
-		out = torch.add(out,fc5)
-		out = torch.div(out,5)
-		'''
 
 	
 
@@ -316,11 +308,18 @@ def find_gaze(img,head,pos,model):
 				count_hm[i_x:f_x,i_y:f_y] += 1
 	
 	#Resize heatmap to match size of input image
-	heatmap = heatmap.astype(np.uint8)
+	#heatmap = heatmap.astype(np.uint8)
 	#heatmap = np.reshape(heatmap,(1,heatmap.shape[0],heatmap.shape[1]))
 
-	hm_base = heatmap#np.divide(heatmap,count_hm) #UNCOMMENT ONCE LRN IMPLEMENTED
+	hm_base = np.divide(heatmap,count_hm) #UNCOMMENT ONCE LRN IMPLEMENTED
 	hm_results = cv2.resize(np.transpose(hm_base),(227,227),interpolation=cv2.INTER_LINEAR)
+	hm_idx = np.argmax(hm_results)
+	hm_max = hm_results[hm_idx]
+	hm_r_c = np.unravel_index(hm_idx,(hm_results.shape[0],hm_results.shape[1]))
+	y_predict = hm_r_c[0]/hm_results.shape[0]
+	x_predict = hm_r_c[1]/hm_results.shape[1]
+	return x_predict, y_predict
+	'''Fixed this for heatmap implementation	
 	hm_results = np.reshape(hm_results,(hm_results.shape[0],hm_results.shape[1],1))
 	cv2.imshow('heatmap',hm_results)
 	heat_img = cv2.cvtColor(hm_results,cv2.COLOR_GRAY2RGB)
@@ -329,7 +328,8 @@ def find_gaze(img,head,pos,model):
 	#Blend images together
 	combined_image = cv2.addWeighted(new_img,0.6,heat_img,0.4,0)
 	cv2.imshow('Heatmap',combined_image)
-	return combined_image
+	return combined_image'''
+	
 	
         
 #sys.stdin.read(1)

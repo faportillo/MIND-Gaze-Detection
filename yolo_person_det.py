@@ -124,7 +124,7 @@ def detect_cv2_video(cfgfile,weightfile,imgfile):
 						ctr=ctr+1
 			if has_eyes and has_baby:
 				re_img = cv2.resize(img,(227,227))
-				re_img -= cv2.mean(re_img)
+				#re_img -= cv2.mean(re_img)
 				print(img)
 				heatmap = gn.find_gaze(re_img,baby_head,eye_position, get_gaze)
 				cv2.imshow('baby_face', baby_head)
