@@ -84,7 +84,7 @@ def detect_cv2_video(cfgfile,weightfile,imgfile):
 					has_baby = True
 					cv2.rectangle(baby_side,(x,y),(x+w,y+h),(0,0,255),2)
 					baby_head = baby_side[y:y+h,x:x+w]#Check right size. **Assumes baby is always on right side of scene
-					baby_head = cv2.resize(baby_head,(227, 227), interpolation=cv2.INTER_CUBIC)
+					baby_head = cv2.resize(baby_head,(227, 227))#, interpolation=cv2.INTER_CUBIC)
 					#baby_head=cv2.filter2D(baby_head,-1,kernel)
 				
 					#cv2.fastNlMeansDenoisingColored(baby_head,baby_head,2,10,7,21)
@@ -124,9 +124,20 @@ def detect_cv2_video(cfgfile,weightfile,imgfile):
 						ctr=ctr+1
 			if has_eyes and has_baby:
 				re_img = cv2.resize(img,(227,227))
-				#re_img -= cv2.mean(re_img)
-				print(img)
+				'''re_img = re_img.astype(np.float)
+				baby_head = baby_head.astype(np.float)
+				re_img /= 255
+				baby_head /= 255'''
+				print("\n\nREIMG TYPE: "+str(re_img.dtype))
+				print("\n\n")
+				print("ReIMG Mean: " +str(re_img.mean(axis=(0,-2,-1),keepdims=1)))
+				print("\n\n")
+				'''re_img -= re_img.mean(axis=(0,-2,-1),keepdims=1)
+				baby_head -= baby_head.mean(axis=(0,-2,-1),keepdims=1)'''
+				print(re_img)
 				heatmap = gn.find_gaze(re_img,baby_head,eye_position, get_gaze)
+				#time.sleep(10) 
+				print("Gaze Coordinates: "+str(heatmap))
 				cv2.imshow('baby_face', baby_head)
 				'''
 					Do Gazenet stuff here
