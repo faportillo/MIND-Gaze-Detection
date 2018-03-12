@@ -1,3 +1,11 @@
+% img is a width * height * 3 sized 3d matrix, formatted exactly as imread would
+% return it
+
+% e is a two dimensional vector, with a face position whose values is
+% normalized to [0,1] within the image dimensions.
+
+% net is just a reference to the neural network, not of interest to img loading
+
 function [x_predict,y_predict,hm_results,net] = predict_gaze(img,e,net)
     % Written by Adria Recasens (recasens@mit.edu)
     
@@ -9,24 +17,37 @@ function [x_predict,y_predict,hm_results,net] = predict_gaze(img,e,net)
     s = RandStream('mt19937ar','Seed',sum(10000*clock));
     RandStream.setGlobalStream(s);
     
-   filelist = cell(1,3);   
-   filelist(:,1) = {img};
+    % we assume the img passed in is a standard uint8 rgb image read from
+    % imread, because that's what the demo passes in, in almost all cases.
+    
+   filelist = cell(1,3); % create a single variable as a vector of cells to
+                         % handle the three pieces of information for input
 
-   alpha = 0.3;
-   w_x = floor(alpha*size(img,2));
-   w_y = floor(alpha*size(img,1));
-   if(mod(w_x,2)==0)
-        w_x = w_x +1;
+   filelist(:,1) = {img}; % first piece is the raw image data (we can ignore the
+                          % case where the function was passed a filename)
+
+
+   alpha = 0.3; % the height values we use are 0.3 * the original dimensions.
+   w_x = floor(alpha*size(img,2)); % w_x is assigned the height for some reason
+   w_y = floor(alpha*size(img,1)); % w_y is assigned the width
+   if(mod(w_x,2)==0)  % we increase the height and width by 1 if it's even, to
+        w_x = w_x +1; % make it odd
    end
 
    if(mod(w_y,2)==0)
         w_y = w_y +1;
    end
    
+   % this block of code initializes a patch of size w_y,w_x, and intializes that
+   % patch to hex color #7b7568, which is like a muddy gray
    im_face = ones(w_y,w_x,3,'uint8');
    im_face(:,:,1) = 123*ones(w_y,w_x,'uint8');
    im_face(:,:,2) = 117*ones(w_y,w_x,'uint8');
    im_face(:,:,3) = 104*ones(w_y,w_x,'uint8');
+   
+   
+   % we calculate the position within the image of the patch of interest, as
+   % well as the offset for the top left corner from the center.
    center = floor([e(1)*size(img,2) e(2)*size(img,1)]);
    d_x = floor((w_x-1)/2);
    d_y = floor((w_y-1)/2);
@@ -56,20 +77,25 @@ function [x_predict,y_predict,hm_results,net] = predict_gaze(img,e,net)
          top_y = size(img,1);
     end
     
+    
+    % We use this position information to copy out the image data for the face
+    % patch
     im_face(delta_b_y:delta_t_y,delta_b_x:delta_t_x,:) = img(bottom_y:top_y,bottom_x:top_x,:);
-    filelist(:,2) = {im_face};
+    filelist(:,2) = {im_face}; % we set the second item to the face patch
 
     f = zeros(1,1,169,'single');
     z = zeros(13,13,'single');
-    x = floor(e(1)*13)+1;
-    y = floor(e(2)*13)+1;
+    x = floor(e(1)*13)+1; % we calculate where in a 13x13 patch the face should
+    y = floor(e(2)*13)+1; % be
     z(x,y) =1;
-    f(1,1,:) = z(:);
-    filelist(:,3) = {f};
+    f(1,1,:) = z(:); % then we reshape the array (numpy reshape equiv) to a 169
+    filelist(:,3) = {f}; % dimensional vector, and store it as the third input
 
     use_gpu = 1;
     device_id = 2;
 
+    % This is used to control the for loop, so we only resize the inputs that
+    % are the image data specifically.
     transform_data =[1 1 0];
 
     
@@ -91,19 +117,28 @@ function [x_predict,y_predict,hm_results,net] = predict_gaze(img,e,net)
     ims = cell(size(filelist,2),1);
     for j=1:3
         filelist_i = filelist(1,j);
-        filelist_i = filelist_i{1};
+        filelist_i = filelist_i{1}; % filelist_i is the j-th element of the
+                                    % input cell array
+
+        % These three lines are just a stupid way of saying the image size is
+        % [227 227 3], for the images, and a [1 1 169] vector.
         input_dim = input_dim_all(1+(j-1)*4:j*4);
         b = cell(1, 1);
         img_size = [input_dim(3) input_dim(4) input_dim(2)];
+
+
         image_mean = image_mean_cell{j};
              
-        if(transform_data(j))
-                tmp = load(image_mean);
+        if(transform_data(j)) % This if block just applies to the image and face
+                tmp = load(image_mean); % image
                 image_mean = tmp.image_mean;
                 image_mean = imresize(image_mean, [img_size(1) img_size(2)]);
+
                 img = zeros(size(image_mean, 1), size(image_mean, 2), 3, 'single');
-                if(ischar(filelist_i))
-                    try
+                % the above line is fundamentally meaningless since img is
+                % reassigned below
+                if(ischar(filelist_i)) % This entire block will not be ever be
+                    try                % true in our runtime in the demo
                         img = single(imread(filelist_i));
                     catch e1
                        system(['convert ' filelist_i ' -colorspace rgb ' filelist{i}]);
@@ -112,22 +147,51 @@ function [x_predict,y_predict,hm_results,net] = predict_gaze(img,e,net)
                        end
                     end
                 else
-                        img = single(filelist_i);
+                        img = single(filelist_i); % This line converts the
+                                                  % original uint8 image passed
+                                                  % as a parameter into a float
+                                                  % image
                 end
-                if(size(img, 4)~=1), img = img(:,:,:,1); end
+                if(size(img, 4)~=1), img = img(:,:,:,1); end % This should never be true, but may be for gifs
+
                 img = imresize(img, [size(image_mean, 1) size(image_mean, 2)], 'bilinear');
+                % This line does the image resize via scaling to [227 227]
+                % torchvision.transforms.Resize should do something similar, but
+                % I don't know how to call it
+
                 if(size(img, 3)==1), img = cat(3, img, img, img); end
+                % This statement takes grayscale images and copies the grayscale
+                % intensity to all RGB channels to make it RGB
+
                 img = img(:, :, [3 2 1])-image_mean;
+                % This line reverses the RGB channels to BGR, and subtracts the
+                % matrix read from the named file from the image. I can't say
+                % what's actually inside the file because I don't have matlab.
+
                 b{1} = permute(img, [2 1 3]);
+                % This line transposes the image
 
         else
-                b{1} = filelist_i;
+                b{1} = filelist_i; % don't do anything to the head position vector
         end
-         b = cat(4, b{:}); 
-        ims{j} = b;   
+         b = cat(4, b{:}); % Not entirely sure if this line should even do
+                           % anything, since b{:} should only be a single
+                           % element
+
+        ims{j} = b; % store the processed image into the ims cell array
     end
     
-    f_val = net.forward(ims);
+    % At this point, ims is a 3 length cell array that should look as follows:
+    % {
+    % 1: original image, scaled to [227 227 3] and transposed.
+    % 2: head patch, scaled to [227 227 3] and transposed.
+    % 3: head position, marked as 1 in a 13x13 grid, then unfolded and passed
+    %    as a [1 1 169] vector.
+    % }
+    
+    
+    f_val = net.forward(ims); % not sure where net comes from, since the demo
+                              % doesn't actually pass a value in to the parameter.
 
     fc_0_0 = f_val{1}';
     fc_1_0= f_val{2}';
