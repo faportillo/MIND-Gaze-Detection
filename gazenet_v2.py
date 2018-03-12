@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 #Uncomment if using build < 0.4
 from LocalResponseNorm import LRN
 
+import DataProcess as dp
+from torchvision import utils
 
 '''
 	TODO:
@@ -129,13 +131,13 @@ class GazeNet(nn.Module):
 	def forward(self, x_i,x_h,x_p):
 		#Saliency pathway
 		saliency = self.sal_conv(x_i)
-		print("\n\n\t\tSaliency Conv: "+str(saliency))
+		#print("\n\n\t\tSaliency Conv: "+str(saliency))
 		#Gaze pathway
-		print(x_h)
+		#print(x_h)
 		gaze = self.gaze_conv(x_h)
-		print("\n\n\t\tGAZE Conv: "+str(gaze))
+		#print("\n\n\t\tGAZE Conv: "+str(gaze))
 		gaze = gaze.view(gaze.size(0),-1) #Reshape
-		print("\n\n\t\tGAZE Type: "+str(gaze.size()))
+		#print("\n\n\t\tGAZE Type: "+str(gaze.size()))
 		gaze = self.fc_face(gaze)
 		
 		#Head position input
@@ -158,82 +160,131 @@ class GazeNet(nn.Module):
 		fc3 = self.fc_m1_0(out)
 		fc4 = self.fc_0_m1(out)
 		fc5 = self.fc_0_1(out)
-		print(fc1)
+		'''print(fc1)
 		print(fc2)
 		print(fc3)
 		print(fc4)
-		print(fc5)
+		print(fc5)'''
 		
 		fc1 = self.softmax(fc1)
 		fc2 = self.softmax(fc2)
 		fc3 = self.softmax(fc3)
 		fc4 = self.softmax(fc4)
 		fc5 = self.softmax(fc5)
-		return [fc1,fc2,fc3,fc4,fc5]
+		return fc1,fc2,fc3,fc4,fc5
 
 	
 
-def train_gaze(train_loader, weightfile):
-	#Do data loading here
+def train_gaze():
+    
+    gazenet = GazeNet()
+    gazenet = load_weights(gazenet)
+    gazenet.cuda() #Comment out if no CUDA
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(gazenet.parameters(), lr=learning_rate)
+    
+    #cropface = dp.CropFaceAndResize(227)
+    
+    gaze_train_dataset = dp.GazeDataset(csv_file='Data/train_annotations.txt',
+                                               root_dir='Data/',
+                                               transform=transforms.Compose([
+                                                   dp.Rescale(280),
+                                                   dp.RandomCrop(227)
+                                               ]))
+    
+    gaze_test_dataset = dp.GazeDataset(csv_file='Data/test_annotations.txt',
+                                               root_dir='Data/',
+                                               transform=transforms.Compose([
+                                                   dp.Rescale(280),
+                                                   dp.RandomCrop(227)
+                                               ]))
+    
+#    train_loader = torch.utils.data.DataLoader(gaze_train_dataset, batch_size=batch_size,
+#                        shuffle=True, num_workers=4)
+#    test_loader = torch.utils.data.DataLoader(gaze_test_dataset, batch_size=batch_size,
+#                        shuffle=True, num_workers=4)
+    
+    
+    for epoch in range(num_epochs):
+        # trainning
+        ave_loss = 0
+        for i, (sample_batched, inputs) in enumerate(gaze_train_dataset):
+			print(i)
+			#            print(inputs['image'].size())
+			#            print(sample_batched['annotations'].size())
+			#            print(inputs['image'].size())
+			input1 = Variable(inputs['image']).cuda()
+			input2 = Variable(inputs['head']).cuda()
+			input3 = Variable(inputs['pos']).cuda()
+			labels = Variable(sample_batched['label']).cuda()
+			#            print(input2.size())
+			#            print(input3.size())
+			#            print(labels.size())
+			optimizer.zero_grad()
+			out = gazenet(input1, input2, input3)
 
-
-		
-	gazenet = GazeNet()
-	gazenet.cuda() #Comment out if no CUDA
-
-	#Load weights for model
-	#gazenet = load_weights(gazenet)
-
-	#Loss and Optimizer
-	criterion = nn.CrossEntropyLoss()
-	optimizer = torch.optim.Adam(gazenet.parameters(), lr=learning_rate)
-
-	for epoch in range(num_epochs):
-		'''
-			Next 3 lines not implemented yet!!!
-		'''
-		for i, (images,labels) in enumerate(train_loader):
-			images = Variable(images).cuda()
-			labels = Variable(labels).cuda()
-
-			#Forward and Backward Pass
-			optimizer.zero_grad() #Zero gradients
-			outputs = gazenet(images)
-			loss = criterion(outputs, labels)
+			#            print(labels.size())
+			
+			#print(out)
+			if isinstance(out, tuple):
+				loss = sum((criterion(o,l) for o,l in zip(out,labels)))
+			else:
+				loss = criterion(out, labels)
 			loss.backward()
-			optimizer.step()
+			optimizer.step()            
+			ave_loss = ave_loss * 0.9 + loss.data[0] * 0.1
+			if (i+1) % 1000 == 0 or (i+1) == len(gaze_train_dataset):
+				print ('==>>> epoch: {}, batch index: {}, train loss: {:.6f}'.format(
+					epoch, i+1, ave_loss))
 
-			#**Need to check with Validation Set
-	gazenet.save_state_dict(weightfile)
-	#Test model
-	gazenet.eval()
-	correct = 0
-	total = 0
+        # testing
+        correct_cnt, ave_loss = 0, 0
+        total_cnt = 0
+        for i, (sample_batched, inputs) in enumerate(gaze_test_dataset):
+            
+            input1 = Variable(inputs['image'], volatile=True).cuda()
+            input2 = Variable(inputs['head'], volatile=True).cuda()
+            input3 = Variable(inputs['pos'], volatile=True).cuda()
+            labels = Variable(sample_batched['label'], volatile=True).cuda()
+            
+            out = gazenet(input1, input2, input3)
+            if isinstance(out, tuple):
+                loss = sum((criterion(o,l) for o,l in zip(out,labels)))
+            else:
+                loss = criterion(out, labels)
 
-	for images, labels in test_loader:
-		images = Variable(images).cuda()
-		outputs = gazenet(images)
-		#Show heatmaps and print accuracy
+            _, pred_label = torch.max(out.data, 1)
+            total_cnt += input1.data.size()[0]
+            correct_cnt += (pred_label == labels.data).sum()
+            # smooth average
+            ave_loss = ave_loss * 0.9 + loss.data[0] * 0.1
+            
+            if(i+1) % 1000 == 0 or (i+1) == len(gaze_test_dataset):
+                print( '==>>> epoch: {}, batch index: {}, test loss: {:.6f}, acc: {:.3f}'.format(
+                    epoch, i+1, ave_loss, correct_cnt * 1.0 / total_cnt))
 
-	return gazenet
+    torch.save(gazenet.state_dict(), gazenet.name())
+    return gazenet
 
 
 def find_gaze(img,head,pos,model):
 
 	#Load the weights
-	gazenet = load_weights(model)
-	gazenet.cuda()
+	#gazenet = load_weights(model)
+	#gazenet.cuda()
 	#Normalize images
 	'''img /= 255
 	head /= 255'''
-	print(img)
+	#print(img)
 	
 
 	#transfrom head position (aka eye location coordinate) into vector
 	head_pos = np.zeros((1,1,169))
 	z = np.zeros((13,13))
-	x = np.floor((pos[0]*13)/np.size(img,0))+1
-	y = np.floor((pos[1]*13)/np.size(img,0))+1
+    #x = np.floor((pos[0]*13)/np.size(img,0))+1
+	#y = np.floor((pos[1]*13)/np.size(img,0))+1
+	x = int(np.floor((pos[0]*13)))
+	y = int(np.floor((pos[1]*13)))
 	z[x,y] = 1
 	z = np.reshape(z, (1,1,169))
 	head_pos=z
@@ -241,8 +292,8 @@ def find_gaze(img,head,pos,model):
 	h_pos = torch.from_numpy(head_pos)
 
 	#Resize images
-	print("\n\nimg size: " + str(np.shape(img)))
-	print("\n\n")
+	#print("\n\nimg size: " + str(np.shape(img)))
+	#print("\n\n")
 	img = np.reshape(img,(227,227,3))
 	head = np.reshape(head,(227,227,3))
 	#load model
@@ -251,8 +302,8 @@ def find_gaze(img,head,pos,model):
 	#From CV2 image
 	t_img = torch.from_numpy(img.transpose(2,0,1)).float().unsqueeze(0)
 	t_head = torch.from_numpy(head.transpose(2,0,1)).float().div(255.0).unsqueeze(0)
-	print(head.transpose(2,0,1)/255.0)
-	cv2.imshow('Test head', head)
+	#print(head.transpose(2,0,1)/255.0)
+	#cv2.imshow('Test head', head)
 	#create image variable
 	img_var = Variable(t_img).cuda()
 	head_var = Variable(t_head).cuda()
@@ -260,9 +311,9 @@ def find_gaze(img,head,pos,model):
 	'''img_var = image2torch(img)
 	head_var = image2torch(head)'''
 	#evaluate image, output is Pytorch Variable
-	gaze_outputs = gazenet(img_var, head_var, h_pos)
-	print("\n\n\t\tGAZE OUTPUTS: "+str(gaze_outputs))
-	print("\n\n")
+	gaze_outputs = model(img_var, head_var, h_pos)
+	#print("\n\n\t\tGAZE OUTPUTS: "+str(gaze_outputs))
+	#print("\n\n")
 
 	outputs = gaze_outputs
 
@@ -325,7 +376,7 @@ def find_gaze(img,head,pos,model):
 	hm_r_c = np.unravel_index(hm_idx,(hm_results.shape[0],hm_results.shape[1]))
 	y_predict = hm_r_c[0]/hm_results.shape[0]
 	x_predict = hm_r_c[1]/hm_results.shape[1]
-	return x_predict, y_predict
+	return x_predict, y_predict, hm_results
 	'''Fixed this for heatmap implementation	
 	hm_results = np.reshape(hm_results,(hm_results.shape[0],hm_results.shape[1],1))
 	cv2.imshow('heatmap',hm_results)
@@ -501,8 +552,7 @@ def load_weights(gazenet):
 	return gazenet
 	
 
-
-'''RUN NETWORK'''
-sys.stdin.read(1)
+if __name__== "__main__":
+    trained_model = train_gaze()
 
 

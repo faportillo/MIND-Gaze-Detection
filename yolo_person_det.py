@@ -59,16 +59,19 @@ def detect_cv2_video(cfgfile,weightfile,imgfile):
 		#print(str(kernel))
 		has_baby = False
 		has_eyes = False
+		centroid_x = 0
+		centroid_y = 0
 		if res:
 			#img = cv2.filter2D(img,-1,kernel)
 			heatmap = img
+			#img +=20
 			baby_side = img[30:np.size(img,0)*2//3,np.size(img,1)/2:np.size(img,1)]
-			
+			print("\n\n\tBABY Max: " + str(np.amax(baby_side)))
 			#Do haar cascades 
 			prof_rectangles = profile_cascade.detectMultiScale(baby_side,1.2,3)
 			face_rectangles = face_cascade.detectMultiScale(baby_side,1.2,3)
-			print(str(type(prof_rectangles)))
-			print(str(type(face_rectangles)))
+			#print(str(type(prof_rectangles)))
+			#print(str(type(face_rectangles)))
 			if type(prof_rectangles) is np.ndarray:
 				if prof_rectangles.size >0:
 					haar_rectangles = prof_rectangles
@@ -77,24 +80,29 @@ def detect_cv2_video(cfgfile,weightfile,imgfile):
 					haar_rectangles = face_rectangles
 			else:
 					haar_rectangles = [0]
-
+			
+			cx_prime = 0
+			cy_prime = 0
 			if type(haar_rectangles) is np.ndarray:
 				#Draw rectangles head and retrieve coordinates
 				for(i,(x,y,w,h)) in enumerate(haar_rectangles):
 					has_baby = True
-					cv2.rectangle(baby_side,(x,y),(x+w,y+h),(0,0,255),2)
-					baby_head = baby_side[y:y+h,x:x+w]#Check right size. **Assumes baby is always on right side of scene
-					baby_head = cv2.resize(baby_head,(227, 227))#, interpolation=cv2.INTER_CUBIC)
+					global_w = w/baby_side.shape[0]
+					global_h = w/baby_side.shape[1]
+					cv2.rectangle(baby_side,(x-w/2,y-h/2),(x+w+w/2,y+h+h/2),(0,0,255),2)
+					baby_head = baby_side[y-h/3:y+h+h/3,x-w/3:x+w+w/3]#Check right size. **Assumes baby is always on right side of scene
+					baby_head = cv2.resize(baby_head,(227, 227), interpolation=cv2.INTER_CUBIC)
 					#baby_head=cv2.filter2D(baby_head,-1,kernel)
-				
+					baby_eye_h =  baby_side[y:y+h,x:x+w]
+					baby_eye_h = cv2.resize(baby_eye_h,(227, 227), interpolation=cv2.INTER_CUBIC)
 					#cv2.fastNlMeansDenoisingColored(baby_head,baby_head,2,10,7,21)
 				
-					print(str(x)+','+str(y)+','+str(x+w)+','+str(y+h))
+					#print(str(x)+','+str(y)+','+str(x+w)+','+str(y+h))
 					#baby_head = cv2.cvtColor(baby_head, cv2.COLOR_BGR2GRAY)
 					#baby_head = cv2.Canny(baby_head,0,25)
 				
 					#Haar cascade for eyes 
-					eyes = eye_cascade.detectMultiScale(baby_head)
+					eyes = eye_cascade.detectMultiScale(baby_eye_h)
 					sum_ex=0
 					sum_ey=0
 					e_len=0
@@ -109,21 +117,31 @@ def detect_cv2_video(cfgfile,weightfile,imgfile):
 					if e_len:
 						centroid_x = np.nan_to_num(sum_ex/e_len)
 						centroid_y = np.nan_to_num(sum_ey/e_len)
-						cv2.circle(baby_head, (centroid_x,centroid_y),15,(255,255,0))
+						print("CENTROID: "+ str(centroid_x.astype(float)/w)+","+str(centroid_y.astype(float)/h))
+						cv2.circle(baby_eye_h, (centroid_x,centroid_y),15,(255,255,0))
 					ctr=0
 					#Draw rectangles for first two eye cascades detected, assumes those are the strongest features detected
 					for (ex,ey,ew,eh) in eyes:
 						angle = np.absolute(np.arctan2(centroid_x-(ex+ex+ew)/2,(ey+ey+eh)/2-centroid_y))
-						if ctr<=1:
-							cv2.rectangle(baby_head,(ex,ey),(ex+ew,ey+eh),(255,0,0),2)
-							cv2.line(baby_head,((ex+ex+ew)/2,(ey+ey+eh)/2),(centroid_x,centroid_y),(0,255,0),2)
-							eye_position = (centroid_x,centroid_y)
+						if ctr<=2:
+							cv2.rectangle(baby_eye_h,(ex,ey),(ex+ew,ey+eh),(255,0,0),2)
+							cv2.line(baby_eye_h,((ex+ex+ew)/2,(ey+ey+eh)/2),(centroid_x,centroid_y),(0,255,0),2)
+							eye_position = (centroid_x.astype(float)/227.0,centroid_y.astype(float)/227.0)
 							has_eyes = True
 						else:
 							break
 						ctr=ctr+1
+					cx_prime = x+centroid_x
+					cy_prime = y+centroid_y
+					cv2.circle(img, (centroid_x,centroid_y),15,(255,255,0))
+
+			'''
+				Do Gazenet stuff here
+				check if has_baby and has_eyes are true then pass into network
+			'''
 			if has_eyes and has_baby:
 				re_img = cv2.resize(img,(227,227))
+				print("\n\n\tREIMG Max: " + str(np.amax(re_img)))
 				'''re_img = re_img.astype(np.float)
 				baby_head = baby_head.astype(np.float)
 				re_img /= 255
@@ -135,15 +153,20 @@ def detect_cv2_video(cfgfile,weightfile,imgfile):
 				'''re_img -= re_img.mean(axis=(0,-2,-1),keepdims=1)
 				baby_head -= baby_head.mean(axis=(0,-2,-1),keepdims=1)'''
 				print(re_img)
-				heatmap = gn.find_gaze(re_img,baby_head,eye_position, get_gaze)
-				#time.sleep(10) 
+				print("\n\n\tEYEPOSITION"+str(eye_position))
+			
+				heatmap= gn.find_gaze(re_img,baby_head,eye_position, get_gaze)
 				print("Gaze Coordinates: "+str(heatmap))
-				cv2.imshow('baby_face', baby_head)
-				'''
-					Do Gazenet stuff here
-					check if has_baby and has_eyes are true then pass into network
+				
+				gaze_pos = (int(round(heatmap[0]*re_img.shape[0])),int(round(heatmap[1]*re_img.shape[1])))
+				cv2.line(re_img, (cx_prime, cy_prime),(gaze_pos[0],gaze_pos[1]), (0,100,255),2)
+				cv2.circle(re_img,(gaze_pos[0],gaze_pos[1]),10,(255,255,0),2)
+				#time.sleep(10) 
+				cv2.imshow("GAZE",re_img)
+				cv2.imshow('baby_face', baby_eye_h)
+				
+					
 
-				'''
 			#img = img[0:330, 0:np.size(img,1)]
 			sized = cv2.resize(img[0:330, 0:np.size(img,1)*2//3], (m.height, m.width)) #Resize to m.height, m.width
 			bboxes = do_detect(m, sized, 0.5, 0.4, use_cuda) #Yolo detection
