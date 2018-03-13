@@ -3,7 +3,7 @@ import os
 import numpy as np
 from skimage import io,transform
 import pandas as pd
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.lines as lines
 import torch
@@ -18,11 +18,11 @@ def show_gaze(image, annotations, label):
     y=annotations[0, 1]*image.shape[0]
     w=annotations[1, 0]*image.shape[1]
     h=annotations[1, 1]*image.shape[0]
-    eyex = annotations[2, 0]*image.shape[1]
+    ''''eyex = annotations[2, 0]*image.shape[1]
     eyey = annotations[2, 1]*image.shape[0]
     targetx = annotations[3, 0]*image.shape[1]
     targety = annotations[3, 1]*image.shape[0]
-    fig,ax = plt.subplots(1)
+    #fig,ax = plt.subplots(1)
     ax.imshow(image)
     rect = patches.Rectangle((x,y),w,h,linewidth=1,edgecolor='r',facecolor='none')
     eye = patches.Circle((eyex,eyey),5)
@@ -32,8 +32,8 @@ def show_gaze(image, annotations, label):
     ax.add_patch(eye)
     ax.add_line(lines.Line2D(targetx, targety, linewidth=2, color='yellow'))
     ax.axis('off')
-    plt.show()
-    plt.pause(0.001)  # pause a bit so that plots are updated
+    #plt.show()
+    #plt.pause(0.001)  # pause a bit so that plots are updated'''
 
 
 class GazeDataset(Dataset):

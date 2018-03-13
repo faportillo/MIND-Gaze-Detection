@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 import sys
 from torch.nn._functions.padding import ConstantPadNd
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 #Uncomment if using build < 0.4
 from LocalResponseNorm import LRN
 
@@ -185,15 +185,15 @@ def train_gaze():
     
     #cropface = dp.CropFaceAndResize(227)
     
-    gaze_train_dataset = dp.GazeDataset(csv_file='Data/train_annotations.txt',
-                                               root_dir='Data/',
+    gaze_train_dataset = dp.GazeDataset(csv_file='/HD1/Data/train_annotations.txt',
+                                               root_dir='/HD1/Data/',
                                                transform=transforms.Compose([
                                                    dp.Rescale(280),
                                                    dp.RandomCrop(227)
                                                ]))
     
-    gaze_test_dataset = dp.GazeDataset(csv_file='Data/test_annotations.txt',
-                                               root_dir='Data/',
+    gaze_test_dataset = dp.GazeDataset(csv_file='/HD1/Data/test_annotations.txt',
+                                               root_dir='/HD1/Data/',
                                                transform=transforms.Compose([
                                                    dp.Rescale(280),
                                                    dp.RandomCrop(227)
@@ -236,7 +236,8 @@ def train_gaze():
 			if (i+1) % 1000 == 0 or (i+1) == len(gaze_train_dataset):
 				print ('==>>> epoch: {}, batch index: {}, train loss: {:.6f}'.format(
 					epoch, i+1, ave_loss))
-
+			
+			
         # testing
         correct_cnt, ave_loss = 0, 0
         total_cnt = 0
@@ -248,17 +249,23 @@ def train_gaze():
             labels = Variable(sample_batched['label'], volatile=True).cuda()
             
             out = gazenet(input1, input2, input3)
+	    
             if isinstance(out, tuple):
                 loss = sum((criterion(o,l) for o,l in zip(out,labels)))
             else:
                 loss = criterion(out, labels)
-
-            _, pred_label = torch.max(out.data, 1)
+	    out_mat = torch.cat((out[0],out[1],out[2],out[3],out[4]),0)
+	    
+	    #out_avg = torch.sum(out_mat,0)
+	    #out_avg = torch.div(out_avg,5)
+	    print(out_mat)
+            _, pred_label = torch.max(out_mat, 1)
+	    print(pred_label)
+	    print(labels.data)
             total_cnt += input1.data.size()[0]
-            correct_cnt += (pred_label == labels.data).sum()
+	    correct_cnt += (pred_label.data==labels.data).cpu().sum()
             # smooth average
-            ave_loss = ave_loss * 0.9 + loss.data[0] * 0.1
-            
+            ave_loss = ave_loss * 0.9 + loss.data[0] * 0.1 
             if(i+1) % 1000 == 0 or (i+1) == len(gaze_test_dataset):
                 print( '==>>> epoch: {}, batch index: {}, test loss: {:.6f}, acc: {:.3f}'.format(
                     epoch, i+1, ave_loss, correct_cnt * 1.0 / total_cnt))
