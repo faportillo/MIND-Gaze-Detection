@@ -1,19 +1,32 @@
 package mind_gaze_gui;
 
 import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.image.BufferedImage;
 import java.io.File;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
-import java.awt.event.ActionListener;
-import java.awt.event.MouseEvent;
-import java.awt.event.ActionEvent;
+import com.sun.jna.NativeLibrary;
 
+import lombok.Data;
+import uk.co.caprica.vlcj.component.DirectMediaPlayerComponent;
+import uk.co.caprica.vlcj.player.MediaPlayerFactory;
+import uk.co.caprica.vlcj.player.embedded.EmbeddedMediaPlayer;
+import uk.co.caprica.vlcj.player.embedded.videosurface.CanvasVideoSurface;
+import uk.co.caprica.vlcj.runtime.RuntimeUtil;
+
+@Data
 public class GuiController {
+	// TODO: Need to put path of your VLC library and plugins here
+	private static final String NATIVE_LIBRARY_SEARCH_PATH = "/Applications/VLC.app/Contents/MacOS/lib";
+
+
 	public static void main(String[] args) {
-		Boolean analyze = false;
-		FilePicker filePicker = new FilePicker();
+		NativeLibrary.addSearchPath(RuntimeUtil.getLibVlcLibraryName(), NATIVE_LIBRARY_SEARCH_PATH);
+		Analyzer analyzer = new Analyzer();
 
 		// Creating new Frame
 		JFrame frame = new JFrame("MIND Gaze");
@@ -33,6 +46,7 @@ public class GuiController {
 
 		// Panel at center for video playback
 		JPanel centerPanel = new JPanel();
+		centerPanel.setBorder(null);
 		frame.getContentPane().add(centerPanel, BorderLayout.CENTER);
 
 		// Panel at bottom for button
@@ -51,14 +65,35 @@ public class GuiController {
 		importButton.setForeground(Color.BLACK);
 		importButton.setToolTipText("Click on the button to analyze  the video file");
 
+		// vlcj only works with canvas
+		 Canvas playerCanvas = new Canvas();
+		 centerPanel.add(playerCanvas);
+		 MediaPlayerFactory mediaPlayerFactory = new MediaPlayerFactory();
+		 CanvasVideoSurface videoSurface =
+		 mediaPlayerFactory.newVideoSurface(playerCanvas);
+		 EmbeddedMediaPlayer mediaPlayer =
+		 mediaPlayerFactory.newEmbeddedMediaPlayer();
+		 mediaPlayer.setVideoSurface(videoSurface);
+
 		// Import button Action - Picking a file
-		importButton.addActionListener(filePicker);
-		String filePath = filePicker.getFilePath();
-		File file = filePicker.getFile();
+		importButton.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent event) {
+				JFileChooser file = new JFileChooser();
+				FileNameExtensionFilter filter = new FileNameExtensionFilter("MOV, MPG & MP4 Videos", "mov", "mpg",
+						"mp4");
+				file.setFileFilter(filter);
+				int result = file.showOpenDialog(null);
+				if (result == JFileChooser.APPROVE_OPTION) {
+					System.out.println("You chose to open this file: " + file.getSelectedFile().getName());
+					File selectedFile = file.getSelectedFile();
+					String filePath = selectedFile.getAbsolutePath();
+					mediaPlayer.playMedia(filePath);
+				}
+			}
+		});
 
-		// TODO: Ability to Play Video
-
-		// TODO: Analyze Button Action - turn a flag
+		// Analyze button Action - Kickstart Analysis
+		analyzeButton.addActionListener(analyzer);
 
 		// Rendering the frame
 		frame.setSize(screenWidth, screenHeight); // will cover the entire screen
