@@ -22,11 +22,10 @@ import uk.co.caprica.vlcj.runtime.RuntimeUtil;
 public class GuiController {
 	// TODO: Need to put path of your VLC library and plugins here
 	private static final String NATIVE_LIBRARY_SEARCH_PATH = "/Applications/VLC.app/Contents/MacOS/lib";
-
-
+	private static String  SELECTED_FILE_PATH = "null";
 	public static void main(String[] args) {
+		
 		NativeLibrary.addSearchPath(RuntimeUtil.getLibVlcLibraryName(), NATIVE_LIBRARY_SEARCH_PATH);
-		Analyzer analyzer = new Analyzer();
 
 		// Creating new Frame
 		JFrame frame = new JFrame("MIND Gaze");
@@ -84,22 +83,26 @@ public class GuiController {
 				file.setFileFilter(filter);
 				int result = file.showOpenDialog(null);
 				if (result == JFileChooser.APPROVE_OPTION) {
-					System.out.println("You chose to open this file: " + file.getSelectedFile().getName());
 					File selectedFile = file.getSelectedFile();
-					String filePath = selectedFile.getAbsolutePath();
-					mediaPlayer.playMedia(filePath);
+					final String filePath = selectedFile.getAbsolutePath();
+					SELECTED_FILE_PATH = filePath;
+					System.out.println("You chose to open this file: " + SELECTED_FILE_PATH);
+					mediaPlayer.playMedia(filePath);					
 				}
 			}
 		});
 
 		// Analyze button Action - Kickstart Analysis
-		analyzeButton.addActionListener(analyzer);
+		analyzeButton.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				// TODO: Phython Script gets called here
+				// SELECTED_FILE_PATH String has the selected file path that you need 
+			}});
 
 		// Rendering the frame
 		frame.setSize(screenWidth, screenHeight); // will cover the entire screen
 		frame.setVisible(true);
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-
 	}
 
 }
