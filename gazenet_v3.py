@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 import sys
 from torch.nn._functions.padding import ConstantPadNd
+import torch.nn.init as init
 #import matplotlib.pyplot as plt
 #Uncomment if using build < 0.4
 from LocalResponseNorm import LRN
@@ -42,7 +43,7 @@ from torchvision import utils
 
 #Hyperparameters
 num_epochs = 100
-batch_size = 256
+batch_size = 1024
 learning_rate = 0.001
 
 class Fire(nn.Module):
@@ -87,10 +88,8 @@ class GazeNet(nn.Module):
             Fire(384, 64, 256, 256),
             nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
 			Fire(512, 64, 256, 256),
-			nn.Conv2d(512, 1000, kernel_size=1),
-			nn.ReLU(),
-			nn.AvgPool2d(13, stride=1),
-			PrintLayer()
+			nn.Conv2d(512, 1, kernel_size=1),
+			nn.ReLU()
 		)
 		'''
 			Gaze Pathway
@@ -113,10 +112,10 @@ class GazeNet(nn.Module):
 			nn.Conv2d(512, 1000, kernel_size=1),
 			nn.ReLU(),
 			nn.AvgPool2d(13, stride=1),
-			PrintLayer())
+			)
 		#Face FC Layer
 		self.fc_face = nn.Sequential(
-			nn.Linear(9216,500),
+			nn.Linear(1000,500),
 			nn.ReLU())
 		#Combined Face and EyePos FC Layers
 		self.gaze_fc = nn.Sequential(
@@ -139,7 +138,12 @@ class GazeNet(nn.Module):
 		#Softmax function
 		self.softmax = nn.Softmax(dim=1)
 		
-		load_weights(self)
+		for m in self.modules():
+			if isinstance(m, nn.Conv2d) or isinstance(m,nn.Linear):
+				init.kaiming_uniform(m.weight.data)
+				if m.bias is not None:
+					m.bias.data.zero_()
+		#load_weights(self)
 
 	def forward(self, x_i,x_h,x_p):
 		#Saliency pathway
@@ -165,7 +169,6 @@ class GazeNet(nn.Module):
 
 		#Do element-wise product b/w Saliency Map and Gaze Mask
 		out = torch.mul(saliency,gaze)
-
 		#Get shifted grids **Not sure if i did this right, someone doublecheck!!
 		out = out.view(out.size(0),-1)
 		fc1 = self.fc_0_0(out)
