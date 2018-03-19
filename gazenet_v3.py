@@ -45,7 +45,27 @@ num_epochs = 100
 batch_size = 256
 learning_rate = 0.001
 
+class Fire(nn.Module):
 
+    def __init__(self, inplanes, squeeze_planes,
+                 expand1x1_planes, expand3x3_planes):
+        super(Fire, self).__init__()
+        self.inplanes = inplanes
+        self.squeeze = nn.Conv2d(inplanes, squeeze_planes, kernel_size=1)
+        self.squeeze_activation = nn.ReLU(inplace=True)
+        self.expand1x1 = nn.Conv2d(squeeze_planes, expand1x1_planes,
+                                   kernel_size=1)
+        self.expand1x1_activation = nn.ReLU(inplace=True)
+        self.expand3x3 = nn.Conv2d(squeeze_planes, expand3x3_planes,
+                                   kernel_size=3, padding=1)
+        self.expand3x3_activation = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        x = self.squeeze_activation(self.squeeze(x))
+        return torch.cat([
+            self.expand1x1_activation(self.expand1x1(x)),
+            self.expand3x3_activation(self.expand3x3(x))
+], 1)
 
 class GazeNet(nn.Module):
 	def __init__(self):
@@ -54,53 +74,46 @@ class GazeNet(nn.Module):
 			Saliency Pathway
 		'''
 		self.sal_conv = nn.Sequential(
-			#layer1
-			nn.Conv2d(3,96,kernel_size=11, stride=4,padding=2),
+			nn.Conv2d(3, 96, kernel_size=7, stride=2),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
+            Fire(96, 16, 64, 64),
+            Fire(128, 16, 64, 64),
+            Fire(128, 32, 128, 128),
+            nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
+            Fire(256, 32, 128, 128),
+            Fire(256, 48, 192, 192),
+            Fire(384, 48, 192, 192),
+            Fire(384, 64, 256, 256),
+            nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
+			Fire(512, 64, 256, 256),
+			nn.Conv2d(512, 1000, kernel_size=1),
 			nn.ReLU(),
-			nn.MaxPool2d(kernel_size=3, stride=2),
-			LRN(local_size=5,alpha=0.0001,beta=0.75),
-			#layer2
-			nn.Conv2d(96,256,kernel_size=5,stride=1,padding=2,groups=2),
-			nn.ReLU(),
-			nn.MaxPool2d(kernel_size=3,stride=2),
-			LRN(local_size=5,alpha=0.0001,beta=0.75),
-			#layer3
-			nn.Conv2d(256,384,kernel_size=3, stride=1,padding=1),
-			nn.ReLU(),
-			#layer4
-			nn.Conv2d(384,384,kernel_size=3, stride=1,padding=1,groups=2),
-			nn.ReLU(),
-			#layer5
-			nn.Conv2d(384,256,kernel_size=3, stride=1,padding=1,groups=2),
-			nn.ReLU(),
-			#layer5_red
-			nn.Conv2d(256,1,kernel_size=1, stride=1), #output is 13x13x1
-			nn.ReLU())
+			nn.AvgPool2d(13, stride=1),
+			PrintLayer()
+		)
 		'''
 			Gaze Pathway
 		'''
 		#Gaze Conv layers
 		self.gaze_conv = nn.Sequential( #input w&h 224x224
-			#layer1
-			nn.Conv2d(3,96,kernel_size=11, stride=4,padding=1), #down to 55x55
+			nn.Conv2d(3, 96, kernel_size=7, stride=2),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
+            Fire(96, 16, 64, 64),
+            Fire(128, 16, 64, 64),
+            Fire(128, 32, 128, 128),
+            nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
+            Fire(256, 32, 128, 128),
+            Fire(256, 48, 192, 192),
+            Fire(384, 48, 192, 192),
+            Fire(384, 64, 256, 256),
+            nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
+			Fire(512, 64, 256, 256),
+			nn.Conv2d(512, 1000, kernel_size=1),
 			nn.ReLU(),
-			nn.MaxPool2d(kernel_size=3, stride=2), #pool to 27x27
-			LRN(local_size=5,alpha=0.0001,beta=0.75),
-			#layer2
-			nn.Conv2d(96,256,kernel_size=5,stride=1,padding=2,groups=2), #stay @ 27x27
-			nn.ReLU(),
-			nn.MaxPool2d(kernel_size=3,stride=2), #pool to 13x13
-			LRN(local_size=5,alpha=0.0001,beta=0.75),
-			#layer3
-			nn.Conv2d(256,384,kernel_size=3, stride=1,padding=1),#Stay @ 13x13
-			nn.ReLU(),
-			#layer4
-			nn.Conv2d(384,384,kernel_size=3, stride=1,padding=1,groups=2), #Stay @ 13x13
-			nn.ReLU(),
-			#layer5
-			nn.Conv2d(384,256,kernel_size=3, stride=1,padding=1,groups=2),#Stay @ 13x13
-			nn.ReLU(),
-			nn.MaxPool2d(kernel_size=3,stride=2)) #pool to 6x6
+			nn.AvgPool2d(13, stride=1),
+			PrintLayer())
 		#Face FC Layer
 		self.fc_face = nn.Sequential(
 			nn.Linear(9216,500),
@@ -413,6 +426,7 @@ def image2torch(img):
 def load_weights(gazenet):
 	
 	#Shahbaz: Manually Loading Weights
+	'''	
 	print("Loading values")
 	w = np.load("Pre-trained model/conv1_0.npy")
 	b = np.load("Pre-trained model/conv1_1.npy")
@@ -449,8 +463,8 @@ def load_weights(gazenet):
 	print(gazenet.sal_conv[14].weight.data.shape == w.shape)
 	print(gazenet.sal_conv[14].bias.data.shape == b.shape)
 	gazenet.sal_conv[14].weight.data = torch.from_numpy(w)
-	gazenet.sal_conv[14].bias.data = torch.from_numpy(b)
-
+	gazenet.sal_conv[14].bias.data = torch.from_numpy(b)'''
+	'''
 	print("Loading Gaze Subnetwork")
 	w = np.load("Pre-trained model/conv1_face_0.npy")
 	b = np.load("Pre-trained model/conv1_face_1.npy")
@@ -482,7 +496,7 @@ def load_weights(gazenet):
 	print(gazenet.gaze_conv[12].bias.data.shape == b.shape)
 	gazenet.gaze_conv[12].weight.data = torch.from_numpy(w)
 	gazenet.gaze_conv[12].bias.data = torch.from_numpy(b)
-	print("\n\t\tConv5 SIZE: "+ str(np.shape(w)))
+	print("\n\t\tConv5 SIZE: "+ str(np.shape(w)))'''
 
 
 

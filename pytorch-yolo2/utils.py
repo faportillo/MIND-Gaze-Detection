@@ -210,7 +210,7 @@ def plot_boxes_cv2(img, boxes, savename=None, class_names=None, color=None):
         x1 = int(round((box[0] - box[2]/2.0) * width))
         y1 = int(round((box[1] - box[3]/2.0) * height))
         x2 = int(round((box[0] + box[2]/2.0) * width))
-        y2 = int(round((box[1] + box[3]/3.0) * height))#Get as much of top half as possible
+        y2 = int(round((box[1] + box[3]/24.0) * height))#Get as much of top half as possible
 
         if color:
             rgb = color
