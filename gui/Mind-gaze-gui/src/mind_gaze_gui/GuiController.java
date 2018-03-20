@@ -95,8 +95,11 @@ public class GuiController {
 		// Analyze button Action - Kickstart Analysis
 		analyzeButton.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
-				// TODO: Phython Script gets called here
+				// TODO: Python Script gets called here
 				// SELECTED_FILE_PATH String has the selected file path that you need 
+				String[] cmd={"python", "/home/felix/Documents/ML_Progs/MIND-Gaze-Detection",
+					SELECTED_FILE_PATH,};
+				Runtime.getRuntime().exec(cmd);
 			}});
 
 		// Rendering the frame

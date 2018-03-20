@@ -245,7 +245,7 @@ def detect_cv2_video(cfgfile,weightfile,imgfile):
 		if cv2.waitKey(1) & 0xFF == ord('q'):
 			break
 
-detect_cv2_video('pytorch-yolo2/cfg/yolo.cfg', 'pytorch-yolo2/yolo.weights','46010_9_Synchrony.mpg')
+detect_cv2_video('pytorch-yolo2/cfg/yolo.cfg', 'pytorch-yolo2/yolo.weights', sys.argv[1]) #Take video file as argument
 
 
 cap.release()
