@@ -5,6 +5,7 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.IOException;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -22,11 +23,11 @@ import uk.co.caprica.vlcj.runtime.RuntimeUtil;
 public class GuiController {
 	// TODO: Need to put path of your VLC library and plugins here
 	private static final String NATIVE_LIBRARY_SEARCH_PATH = "/Applications/VLC.app/Contents/MacOS/lib";
-
+	private static String SELECTED_FILE_PATH = "null";
 
 	public static void main(String[] args) {
+
 		NativeLibrary.addSearchPath(RuntimeUtil.getLibVlcLibraryName(), NATIVE_LIBRARY_SEARCH_PATH);
-		Analyzer analyzer = new Analyzer();
 
 		// Creating new Frame
 		JFrame frame = new JFrame("MIND Gaze");
@@ -66,14 +67,12 @@ public class GuiController {
 		importButton.setToolTipText("Click on the button to analyze  the video file");
 
 		// vlcj only works with canvas
-		 Canvas playerCanvas = new Canvas();
-		 centerPanel.add(playerCanvas);
-		 MediaPlayerFactory mediaPlayerFactory = new MediaPlayerFactory();
-		 CanvasVideoSurface videoSurface =
-		 mediaPlayerFactory.newVideoSurface(playerCanvas);
-		 EmbeddedMediaPlayer mediaPlayer =
-		 mediaPlayerFactory.newEmbeddedMediaPlayer();
-		 mediaPlayer.setVideoSurface(videoSurface);
+		Canvas playerCanvas = new Canvas();
+		centerPanel.add(playerCanvas);
+		MediaPlayerFactory mediaPlayerFactory = new MediaPlayerFactory();
+		CanvasVideoSurface videoSurface = mediaPlayerFactory.newVideoSurface(playerCanvas);
+		EmbeddedMediaPlayer mediaPlayer = mediaPlayerFactory.newEmbeddedMediaPlayer();
+		mediaPlayer.setVideoSurface(videoSurface);
 
 		// Import button Action - Picking a file
 		importButton.addActionListener(new ActionListener() {
@@ -84,22 +83,35 @@ public class GuiController {
 				file.setFileFilter(filter);
 				int result = file.showOpenDialog(null);
 				if (result == JFileChooser.APPROVE_OPTION) {
-					System.out.println("You chose to open this file: " + file.getSelectedFile().getName());
 					File selectedFile = file.getSelectedFile();
-					String filePath = selectedFile.getAbsolutePath();
+					final String filePath = selectedFile.getAbsolutePath();
+					SELECTED_FILE_PATH = filePath;
+					System.out.println("You chose to open this file: " + SELECTED_FILE_PATH);
 					mediaPlayer.playMedia(filePath);
 				}
 			}
 		});
 
 		// Analyze button Action - Kickstart Analysis
-		analyzeButton.addActionListener(analyzer);
+		analyzeButton.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				// String[] cmd={"python", "/Users/prashantgupta/Box
+				// Sync/ECS289G/project/MIND-Gaze-Detection",
+				// SELECTED_FILE_PATH,};
+				String[] cmd = { "python", "/home/felix/Documents/ML_Progs/MIND-Gaze-Detection", SELECTED_FILE_PATH, };
+				try {
+					System.out.println("Begin Analyzing");
+					Runtime.getRuntime().exec(cmd);
+				} catch (IOException e1) {
+					e1.printStackTrace();
+				}
+			}
+		});
 
 		// Rendering the frame
 		frame.setSize(screenWidth, screenHeight); // will cover the entire screen
 		frame.setVisible(true);
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-
 	}
 
 }
