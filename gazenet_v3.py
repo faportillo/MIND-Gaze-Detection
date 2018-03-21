@@ -43,7 +43,7 @@ from torchvision import utils
 
 #Hyperparameters
 num_epochs = 100
-batch_size = 1024
+batch_size = 2048
 learning_rate = 0.001
 
 class Fire(nn.Module):
@@ -225,7 +225,7 @@ def train_gaze():
         # trainning
         ave_loss = 0
         for i, (sample_batched, inputs) in enumerate(gaze_train_dataset):
-			print(i)
+			print(str(epoch)+","+str(i))
 			#            print(inputs['image'].size())
 			#            print(sample_batched['annotations'].size())
 			#            print(inputs['image'].size())
@@ -252,7 +252,7 @@ def train_gaze():
 			if (i+1) % 1000 == 0 or (i+1) == len(gaze_train_dataset):
 				print ('==>>> epoch: {}, batch index: {}, train loss: {:.6f}'.format(
 					epoch, i+1, ave_loss))
-			
+			torch.save(gazenet.state_dict(),'checkpoint.pth.tar')		
 			
         # testing
         correct_cnt, ave_loss = 0, 0
@@ -274,10 +274,10 @@ def train_gaze():
 	    
 	    #out_avg = torch.sum(out_mat,0)
 	    #out_avg = torch.div(out_avg,5)
-	    print(out_mat)
+	    #print(out_mat)
             _, pred_label = torch.max(out_mat, 1)
-	    print(pred_label)
-	    print(labels.data)
+	    #print(pred_label)
+	    #print(labels.data)
             total_cnt += input1.data.size()[0]
 	    correct_cnt += (pred_label.data==labels.data).cpu().sum()
             # smooth average
@@ -286,6 +286,8 @@ def train_gaze():
                 print( '==>>> epoch: {}, batch index: {}, test loss: {:.6f}, acc: {:.3f}'.format(
                     epoch, i+1, ave_loss, correct_cnt * 1.0 / total_cnt))
 
+	    if i == 10:
+		break
     torch.save(gazenet.state_dict(), gazenet.name())
     return gazenet
 
